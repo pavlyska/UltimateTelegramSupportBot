@@ -17,7 +17,7 @@
 1. Клонируйте репозиторий:
    ```bash
    git clone https://github.com/pavlyska/UltimateTelegramSupportBot.git
-   cd support-bot
+   cd UltimateTelegramSupportBot
    ```
 
 2. Установите зависимости:
