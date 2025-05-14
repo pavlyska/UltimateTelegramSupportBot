@@ -583,6 +583,8 @@ def admin_help(message):
             "Пример: `/unban 123456789`\n\n"
             "/ask <номер тикета> - Получить информацию о тикете.\n"
             "Пример: `/ask 42`\n\n"
+            "/open - Открыть тикет после закрытия.\n"
+            "Пример: `/open 42`\n\n"
             "➕ Добавить агента - Добавить нового агента через меню.\n"
             "➖ Удалить агента - Удалить агента через меню.\n"
             "📋 Список тикетов - Просмотреть список открытых тикетов.\n"
@@ -1584,6 +1586,94 @@ def remove_admin_command(message):
         bot.send_message(message.chat.id, 
                          "❌ Ошибка базы данных. Попробуйте позже.")
         print(f"Database error: {e}")
+
+
+####### 
+# Команда /open
+#######
+@bot.message_handler(commands=["open"])
+def open_ticket(message):
+    user_id = message.from_user.id
+    
+    # Проверка прав доступа
+    cursor.execute("SELECT role FROM staff WHERE user_id = ?", (user_id,))
+    staff = cursor.fetchone()
+    if not staff:
+        bot.send_message(user_id, 
+                         "⚠️ У вас нет прав для выполнения этой команды.")
+        return
+    
+    # Разбор аргументов команды
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        bot.send_message(user_id, 
+                         "❌ Неверный формат команды.\nИспользуйте: /open <номер тикета>")
+        return
+    
+    try:
+        ticket_id = int(args[1])  # Получаем номер тикета
+        
+        # Проверяем существование тикета и его статус
+        cursor.execute("SELECT status, user_id FROM tickets WHERE ticket_id = ?", (ticket_id,))
+        ticket_data = cursor.fetchone()
+        if not ticket_data:
+            bot.send_message(user_id, 
+                             f"❌ Тикет с номером {ticket_id} не найден.")
+            return
+        
+        status, ticket_user_id = ticket_data
+        if status != "closed":
+            bot.send_message(user_id, 
+                             f"❌ Тикет #{ticket_id} уже открыт.")
+            return
+        
+        # Открываем тикет
+        cursor.execute("""
+            UPDATE tickets 
+            SET status = 'open', closed_at = NULL, close_reason = NULL 
+            WHERE ticket_id = ?
+        """, (ticket_id,))
+        conn.commit()
+        
+        # Уведомляем пользователя
+        try:
+            bot.send_message(
+                ticket_user_id,
+                f"✅ Ваш тикет #{ticket_id} был повторно открыт. Ожидайте ответа службы поддержки.",
+                reply_markup=user_main_menu
+            )
+        except telebot.apihelper.ApiTelegramException as e:
+            bot.send_message(
+                user_id,
+                f"⚠️ Не удалось уведомить пользователя тикета #{ticket_id}: {e}"
+            )
+        
+        # Уведомляем персонал
+        cursor.execute("SELECT user_id FROM staff")
+        staff_members = cursor.fetchall()
+        for member in staff_members:
+            try:
+                bot.send_message(
+                    member[0],
+                    f"🔄 Тикет #{ticket_id} был повторно открыт агентом @{message.from_user.username or 'Unknown'}.",
+                    reply_markup=admin_menu if staff[0] == "admin" else agent_menu
+                )
+            except telebot.apihelper.ApiTelegramException as e:
+                print(f"Ошибка отправки уведомления персоналу {member[0]}: {e}")
+        
+        bot.send_message(user_id, 
+                         f"✅ Тикет #{ticket_id} успешно открыт.", 
+                         reply_markup=admin_menu if staff[0] == "admin" else agent_menu)
+        
+    except ValueError:
+        bot.send_message(user_id, 
+                         "❌ Неверный формат номера тикета. Пожалуйста, укажите числовое значение.")
+    except sqlite3.Error as e:
+        bot.send_message(user_id, 
+                         "❌ Ошибка базы данных. Попробуйте позже.")
+        print(f"Database error in /open: {e}")
+
+
 
 #######
 # Запуск бота
